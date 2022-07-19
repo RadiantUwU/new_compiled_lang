@@ -16,6 +16,8 @@
 #include "headers/stringUtilities.hpp"
 /*
     build_stage_1 is broken, escape sequences not handled
+    Definition.parse() not done
+    build_stage_4 doesnt check for definitions (yet)
 */
 
 using std::chrono::duration_cast;
@@ -192,13 +194,41 @@ public:
             ss << ", " << str << ")";
             return ss.str();
         }
+        bool operator== (const ppi& other) const {
+            return this->type == other.type && this->str == other.str;
+        }
+        bool operator!= (const ppi& other) const {
+            return !(*this == other);
+        }
+        bool operator== (const std::string& other) const {
+            return this->str == other;
+        }
+        bool operator!= (const std::string& other) const {
+            return !(*this == other);
+        }
     };
     class Definition {
         public:
         std::vector<std::string> args;
         std::vector<ppi> val;
-        std::string parse() {
-
+        std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
+            std::vector<ppi> ret;
+            if (args_a.size() != args.size())
+                throw Exception("DefinitionParsingError", "args_a.size() != args.size(); not enough/too many arguments given to macro call.");
+            for (ppi& p : val) {
+                if (p.type == ppi_t::Token) {
+                    auto findout = std::find(args.begin(),
+                                  args.end(),
+                                  p.str);
+                    if (findout != args.end()) {
+                        auto index = std::distance(args.begin(), findout);
+                        for (auto& p : args_a[index]) {
+                            ret.push_back(p);
+                        }
+                    }
+                }
+            }
+            return ret;
         }
         Definition(const std::vector<std::string>& args, const std::vector<ppi>& val) : args(args), val(val) {};
         Definition(const std::initializer_list<std::string>& args, const std::initializer_list<ppi>& val) : args(args), val(val) {};
@@ -206,6 +236,12 @@ public:
     };
     std::vector<std::string> includepath;
     bool nobase = false;
+    enum class OptimizationLevel {
+        None,
+        Minimal,
+        Full,
+        Maximum
+    } olevel;
 private:
     class Logger {
         int64_t currt;
@@ -237,6 +273,7 @@ private:
     } logger;
     std::vector<std::string> codes;
     std::vector<std::string> includestack;
+    std::vector<std::string> defstack;
     struct IncludedAlready_t {
         int64_t hash;
         bool reuseavail = true;
@@ -262,11 +299,17 @@ private:
         }
     };
     std::vector<IncludedAlready_t> includedalready;
+    enum class def_arg_stg : uint8_t {
+        waiting_start,
+        next_arg
+    };
     std::unordered_map<std::string, Definition> definitions;
+    std::vector<ppi> def_args;
     std::vector<pppi> uncommentedcode;
     std::vector<ppi> code_interPPI;
     std::vector<ppi> code_runPPI;
     std::vector<ppi> code_afterPPI;
+    std::vector<std::string> def_ops;
     struct temp_t {
         std::string s;
         unsigned long long l;
@@ -285,12 +328,13 @@ private:
     }
     struct IncludeFileOutput {
         std::string code;
-        enum class MsgType {
+        enum class MsgType : uint8_t {
             OK,
             NotFound,
             AlreadyIncluded,
             CyclicInclude
         } msg;
+        uint64_t hash = 0;
     };
     IncludeFileOutput include1(const std::string& filename) {
         IncludeFileOutput ret;
@@ -308,7 +352,7 @@ private:
             std::string f = path + "/" + filename;
             file.open(f);
             if (file.good()) {
-                err = 0;
+                err = 0; // no error
                 break;
             }
         }
@@ -319,8 +363,43 @@ private:
         std::stringstream ss;
         ss << file.rdbuf();
         ret.code = ss.str();
-        ret.msg = (std::find(includedalready.begin(), includedalready.end(), std::hash<std::string>()(ret.code)) != includedalready.end()) ? IncludeFileOutput::MsgType::AlreadyIncluded : IncludeFileOutput::MsgType::OK;
+        uint64_t h = std::hash<std::string>()(ret.code);
+        ret.hash = h;
+        ret.msg = (std::find(includedalready.begin(), includedalready.end(), h) != includedalready.end()) ? IncludeFileOutput::MsgType::AlreadyIncluded : IncludeFileOutput::MsgType::OK;
         return ret;
+    }
+    void includefile(const std::string& filename) {
+        IncludeFileOutput o = include1(filename);
+        switch (o.msg) {
+            case IncludeFileOutput::MsgType::OK:
+                goto includeanyway;
+            case IncludeFileOutput::MsgType::AlreadyIncluded:
+                if (std::find(includedalready.begin(), includedalready.end(), o.hash)->reuseavail) {
+                    goto includeanyway;
+                } else {
+                    logger.debug("Already included " + filename);
+                }
+                return;
+            case IncludeFileOutput::MsgType::CyclicInclude:
+                logger.fatal("Cyclic include " + filename);
+                throw Exception("CyclicInclude", "Cyclic include " + filename);
+            case IncludeFileOutput::MsgType::NotFound:
+                logger.fatal("Include file not found " + filename);
+                throw Exception("NotFoundInclude", "Include file not found " + filename);
+            default:
+                logger.fatal("Unknown case during include, memory corruption?");
+                abort();
+        }
+        includeanyway:
+        includestack.push_back(filename);
+        logger.debug("Begin compilation of " + filename);
+        build_stage_1(o.code);
+        build_stage_2();
+        build_stage_3();
+        build_stage_4();
+        includestack.pop_back();
+        logger.debug("End compilation of " + filename);
+        return;
     }
 public:
     void addDef(const std::string& name, const std::vector<std::string>& args, const std::vector<ppi>& val) {
@@ -328,6 +407,9 @@ public:
     }
     void addDef(const std::string& name, const std::initializer_list<std::string>& args, const std::initializer_list<ppi>& val) {
         definitions[name] = Definition(args, val);
+    }
+    void addOp(const std::string& oper) {
+        if (std::find(def_ops.begin(), def_ops.end(), oper) == def_ops.end()) def_ops.push_back(oper);
     }
     void build_stage_1(std::string code) {
         logger.debug("Uncommenting code and doing first token split...");
@@ -731,8 +813,16 @@ public:
         code_runPPI.clear();
         
         Definition def;
+
         std::vector<ppi> ifexpr_parse;
         unsigned short ifexpr_eval = 0;
+        unsigned short elseexpr_eval = 0;
+
+        Definition* defadr;
+        std::string defname;
+        std::vector<std::vector<ppi>> def_args;
+        unsigned short defarg_index = 0;
+        def_arg_stg def_stg = def_arg_stg::waiting_start;
 
         ppi_t currinst = ppi_t::NewLine; //null
         // ppi_t::ppElif for when an if evaluates to false
@@ -765,24 +855,24 @@ public:
             switch (currinst) {
                 case ppi_t::NewLine:
                     switch (i.type) {
-                        case ppi_t::ppDef:
-                        case ppi_t::ppIf:
-                        case ppi_t::ppIfdef:
-                        case ppi_t::ppIfndef:
-                        case ppi_t::ppInclude:
-                        case ppi_t::ppUndef:
-                        case ppi_t::ppError:
-                        case ppi_t::ppWarning:
-                        case ppi_t::ppConcat:
-                        case ppi_t::ppOpDef:
-                        case ppi_t::ppPragma:
+                        case ppi_t::ppDef: //handled
+                        case ppi_t::ppIf: //took, but not handled
+                        case ppi_t::ppIfdef: //handled
+                        case ppi_t::ppIfndef: //handled
+                        case ppi_t::ppInclude: //handled
+                        case ppi_t::ppUndef: //handled
+                        case ppi_t::ppError: //handled
+                        case ppi_t::ppWarning: //handled
+                        case ppi_t::ppConcat: //handled
+                        case ppi_t::ppOpDef: //handled
+                        case ppi_t::ppPragma: //handled
                             currinst = i.type;
                             goto next;
                         case ppi_t::ppElse:
                         case ppi_t::ppElif:
                         case ppi_t::ppElifdef:
                         case ppi_t::ppElifndef:
-                            throw Exception("UnexpectedPreprocessor","Unexpected preprocessor instruction \"#" + i.str + "\".");
+                            currinst = ppi_t::ppElse;
                         case ppi_t::ppEndif:
                             logger.debug("Endif token");
                             goto next;
@@ -790,14 +880,46 @@ public:
                             logger.warn("Unexpected endexpr token.");
                             goto next;
                         default:
-                            code_afterPPI.push_back(i);
+                            if (true) {
+                                auto c = definitions.find(i.str);
+                                if (c != definitions.end()) {
+                                    if (std::find(
+                                        defstack.begin(),
+                                        defstack.end(),
+                                        c->first
+                                    ) != defstack.end()) {
+                                        throw Exception("RecursiveDefinitonCall", "Recursive definition call of \"" + c->first + "\".");
+                                    }
+                                    Definition d = c->second;
+                                    if (d.args.size() == 0) {
+                                        defstack.push_back(c->first);
+                                        for (auto j : d.val) {
+                                            code_runPPI.push_back(j);
+                                        }
+                                        build_stage_4();
+                                        defstack.pop_back();
+                                    } else {
+                                        currinst = ppi_t::ppdef_arg;
+                                        defadr = &(c->second);
+                                        def_args.clear();
+                                        defname = c->first;
+                                    }
+                                    goto next;
+
+                                } else {
+                                    code_afterPPI.push_back(i);
+                                    goto next;
+                                }
+                            }
                             goto next;
                     }
                 case ppi_t::ppConcat:
                     if (i.type != code_afterPPI.back().type) throw Exception("InvalidConcatenation","Cannot concat two different types.");
                     code_afterPPI.back().str += i.str;
+                    i = code_afterPPI.back();
+                    code_afterPPI.pop_back();
                     currinst = ppi_t::NewLine;
-                    goto next;
+                    goto reset;
                 case ppi_t::ppDef:
                     switch (i.type) {
                         case ppi_t::ppdef_name:
@@ -909,6 +1031,74 @@ public:
                             ifexpr_parse.push_back(i);
                             goto next;
                     }
+                case ppi_t::ppOpDef:
+                    switch (i.type) {
+                        case ppi_t::ppEndExpr:
+                            currinst = ppi_t::NewLine;
+                            goto opdefparse;
+                        default:
+                            ifexpr_parse.push_back(i);
+                            goto next;
+                    }
+                case ppi_t::ppElse:
+                    switch (i.type) {
+                        case ppi_t::ppIf:
+                        case ppi_t::ppIfdef:
+                        case ppi_t::ppIfndef:
+                            elseexpr_eval++;
+                            goto next;
+                        case ppi_t::ppEndif:
+                            if (elseexpr_eval > 0) 
+                                elseexpr_eval--;
+                            else 
+                                currinst = ppi_t::NewLine;
+                        default:
+                            goto next;
+                            
+                    }
+                case ppi_t::ppdef_arg:
+                    switch (def_stg) {
+                        case def_arg_stg::waiting_start:
+                            if (i.type != ppi_t::groupStart || i.str != "(") {
+                                throw Exception("UnexpectedToken","Unexpected token after macro call.");
+                            }
+                            def_stg = def_arg_stg::next_arg;
+                            def_args.push_back(std::vector<ppi>());
+                            goto next;
+                        case def_arg_stg::next_arg:
+                            switch (i.type) {
+                                case ppi_t::groupStart:
+                                    def_args.back().push_back(i);
+                                    defarg_index++;
+                                    goto next;
+                                case ppi_t::groupEnd:
+                                    if (--defarg_index == 0) {
+                                        auto out = defadr->parse(def_args);
+                                        def_args.clear();
+                                        defstack.push_back(defname);
+                                        for (auto j : out) 
+                                            code_runPPI.push_back(j);
+                                        
+                                        build_stage_4();
+                                        defstack.pop_back();
+                                        goto next;
+                                    } else {
+                                        def_args.back().push_back(i);
+                                        goto next;
+                                    }
+                                case ppi_t::Delimiter:
+                                    if (i.str == "," && defarg_index == 0) {
+                                        def_args.push_back(std::vector<ppi>());
+                                        goto next;
+                                    } else {
+                                        def_args.back().push_back(i);
+                                    }
+                                default:
+                                    def_args.back().push_back(i);
+                                    goto next;
+                            }
+                    }
+                
             }
             goto next;
             parse:
@@ -925,6 +1115,7 @@ public:
                 if (ifexpr_parse[0].type != ppi_t::Token) goto unknownpragma;
                 if (ifexpr_parse[0].str == "once") {
                     includedalready.back().reuseavail = false;
+                    ifexpr_parse.clear();
                     goto next;
                 } else if (ifexpr_parse[0].str == "nobase") {
                     nobase = true;
@@ -932,11 +1123,14 @@ public:
                         addDef("__NOBASE__",{},{});
                     }
                     logger.info("\"#pragma nobase\" found, will not load base language.");
+                    ifexpr_parse.clear();
                     goto next;
                 } else goto unknownpragma;
             } else {
                 unknownpragma:
                 logger.warn("Unknown pragma \"" + ifexpr_parse[0].str + "\".");
+                ifexpr_parse.clear();
+                goto next;
             }
             errorparse:
             if (ifexpr_parse.size() == 0) {
@@ -954,14 +1148,17 @@ public:
             warnparse:
             if (ifexpr_parse.size() == 0) {
                 logger.warn("#warning directive without arguments");
+                ifexpr_parse.clear();
                 goto next;
             } else if (ifexpr_parse.size() == 1) {
                 if (ifexpr_parse[0].type != ppi_t::String) goto unknownwarn;
                 logger.warn("#warning directive: \"" + ifexpr_parse[0].str + "\"");
+                ifexpr_parse.clear();
                 goto next;
             } else {
                 unknownwarn:
                 logger.warn("Unknown #warning directive.");
+                ifexpr_parse.clear();
                 goto next;
             }
             includeparse:
@@ -971,10 +1168,27 @@ public:
             } else if (ifexpr_parse.size() == 1) {
                 if (ifexpr_parse[0].type != ppi_t::String) goto unknowninclude;
                 logger.debug("Including file " + ifexpr_parse[0].str);
-                IncludeFileOutput in = include1(ifexpr_parse[0].str);
+                includefile(ifexpr_parse[0].str);
+                ifexpr_parse.clear();
             } else {
                 unknowninclude:
                 logger.error("Unknown #include argument(s).");
+                goto next;
+            }
+            opdefparse:
+            if (ifexpr_parse.size() == 0) {
+                logger.error("#opdef directive without arguments");
+                throw Exception("UnexpectedPreprocessorArgument","#opdef directive (no args)");
+            } else if (ifexpr_parse.size() == 1) {
+                if (ifexpr_parse[0].type != ppi_t::String) goto unknownopdef;
+                logger.debug("Defining operator " + ifexpr_parse[0].str);
+                addOp(ifexpr_parse[0].str);
+                ifexpr_parse.clear();
+                goto next;
+            } else {
+                unknownopdef:
+                logger.error("Unknown #opdef argument(s).");
+                ifexpr_parse.clear();
                 goto next;
             }
             next:
@@ -984,11 +1198,15 @@ public:
     void build(std::string code) {
         logger.begin();
         logger.info("Begin build for main.");
-        includestack.push_back("main");
+        includestack.push_back("<main>");
         build_stage_1(code);
         build_stage_2();
         build_stage_3();
         build_stage_4();
+        // etc.
+        logger.info("Finish build for main.");
+        includestack.pop_back();
+
     }
     Compiler() : logger(Logger(*this)) {};
 };
