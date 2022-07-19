@@ -892,12 +892,14 @@ public:
                                     }
                                     Definition d = c->second;
                                     if (d.args.size() == 0) {
+                                        logger.debug("Begin parsing macro \"" + c->first + "\"");
                                         defstack.push_back(c->first);
                                         for (auto j : d.val) {
                                             code_runPPI.push_back(j);
                                         }
                                         build_stage_4();
                                         defstack.pop_back();
+                                        logger.debug("End parsing macro \"" + c->first + "\"");
                                     } else {
                                         currinst = ppi_t::ppdef_arg;
                                         defadr = &(c->second);
@@ -1073,6 +1075,7 @@ public:
                                     goto next;
                                 case ppi_t::groupEnd:
                                     if (--defarg_index == 0) {
+                                        logger.debug("Begin paring macro \"" + defname + "\"");
                                         auto out = defadr->parse(def_args);
                                         def_args.clear();
                                         defstack.push_back(defname);
@@ -1081,6 +1084,7 @@ public:
                                         
                                         build_stage_4();
                                         defstack.pop_back();
+                                        logger.debug("End parsing macro \"" + defname + "\"");
                                         goto next;
                                     } else {
                                         def_args.back().push_back(i);
@@ -1193,6 +1197,8 @@ public:
             }
             next:
         }
+        logger.debug("Running preprocessor...done");
+
     }
     bool verbose = false;
     void build(std::string code) {
