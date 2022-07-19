@@ -1197,7 +1197,7 @@ public:
             }
             next:
         }
-        logger.debug("Running preprocessor...done");
+        logger.debug("Running preprocessor... done");
 
     }
     bool verbose = false;
