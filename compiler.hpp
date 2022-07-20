@@ -1364,7 +1364,8 @@ public:
                                     throw Exception("InvalidOctalLiteral","Invalid octal literal: 0o");
                                 }
                                 for (size_t j = 2; j < i.str.size(); j++) {
-                                    if (!isodigit(i.str[j])) {
+                                    auto c = i.str[j];
+                                    if (c < '0' || c > '7') {
                                         logger.error("Invalid octal literal: " + i.str);
                                         throw Exception("InvalidOctalLiteral","Invalid octal literal: " + i.str);
                                     }
