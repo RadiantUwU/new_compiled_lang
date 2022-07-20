@@ -14,6 +14,7 @@
 #include "data_types/exception.hpp"
 #include "headers/colors.hpp"
 #include "headers/stringUtilities.hpp"
+#include "headers/to_string.hpp"
 /*
     build_stage_1 is broken, escape sequences not handled
     Definition.parse() not done
@@ -309,6 +310,7 @@ private:
     std::vector<ppi> code_interPPI;
     std::vector<ppi> code_runPPI;
     std::vector<ppi> code_afterPPI;
+    std::vector<ppi> code_numliteral;
     std::vector<std::string> def_ops;
     struct temp_t {
         std::string s;
@@ -1322,6 +1324,92 @@ public:
     }
     void build_stage_5() {
         logger.debug("Parsing integer literals...");
+        auto oldcode = code_afterPPI;
+        code_afterPPI.clear();
+        for (auto i : oldcode) {
+            switch (i.type) {
+                case ppi_t::Token:
+                    switch (i.str[0]) {
+                        case '0':
+                            if (startsWith(i.str,"0x")) {
+                                //make sure i.substr(2) is a hex number
+                                if (i.str.size() == 2) {
+                                    logger.error("Invalid hex literal: 0x");
+                                    throw Exception("InvalidHexLiteral","Invalid hex literal: 0x");
+                                }
+                                for (size_t j = 2; j < i.str.size(); j++) {
+                                    if (!isxdigit(i.str[j])) {
+                                        logger.error("Invalid hex literal: " + i.str);
+                                        throw Exception("InvalidHexLiteral","Invalid hex literal: " + i.str);
+                                    }
+                                }
+                                code_numliteral.push_back(ppi(ppi_t::Integer,to_string(stoll(i.str.substr(2),nullptr,16))));
+                            } else if (startsWith(i.str,"0b")) {
+                                //make sure i.substr(2) is a binary number
+                                if (i.str.size() == 2) {
+                                    logger.error("Invalid binary literal: 0b");
+                                    throw Exception("InvalidBinaryLiteral","Invalid binary literal: 0b");
+                                }
+                                for (size_t j = 2; j < i.str.size(); j++) {
+                                    if (i.str[j] != '0' && i.str[j] != '1') {
+                                        logger.error("Invalid binary literal: " + i.str);
+                                        throw Exception("InvalidBinaryLiteral","Invalid binary literal: " + i.str);
+                                    }
+                                }
+                                code_numliteral.push_back(ppi(ppi_t::Integer,to_string(stoll(i.str.substr(2),nullptr,2))));
+                            } else if (startsWith(i.str,"0o")) {
+                                //make sure i.substr(2) is an octal number
+                                if (i.str.size() == 2) {
+                                    logger.error("Invalid octal literal: 0o");
+                                    throw Exception("InvalidOctalLiteral","Invalid octal literal: 0o");
+                                }
+                                for (size_t j = 2; j < i.str.size(); j++) {
+                                    if (!isodigit(i.str[j])) {
+                                        logger.error("Invalid octal literal: " + i.str);
+                                        throw Exception("InvalidOctalLiteral","Invalid octal literal: " + i.str);
+                                    }
+                                }
+                                code_numliteral.push_back(ppi(ppi_t::Integer,to_string(stoll(i.str.substr(2),nullptr,8))));
+                            } else {
+                                //make sure i.substr(1) is a decimal number
+                                for (size_t j = 1; j < i.str.size(); j++) {
+                                    if (!isdigit(i.str[j])) {
+                                        logger.error("Invalid decimal literal: " + i.str);
+                                        throw Exception("InvalidDecimalLiteral","Invalid decimal literal: " + i.str);
+                                    }
+                                }
+                                code_numliteral.push_back(ppi(ppi_t::Integer,to_string(stoll(i.str.substr(1),nullptr,10))));
+                            }
+                            goto next;
+                        case '1':
+                        case '2':
+                        case '3':
+                        case '4':
+                        case '5':
+                        case '6':
+                        case '7':
+                        case '8':
+                        case '9':
+                            //make sure i is a decimal number
+                            for (size_t j = 0; j < i.str.size(); j++) {
+                                if (!isdigit(i.str[j])) {
+                                    logger.error("Invalid decimal literal: " + i.str);
+                                    throw Exception("InvalidDecimalLiteral","Invalid decimal literal: " + i.str);
+                                }
+                            }
+                            code_numliteral.push_back(ppi(ppi_t::Integer,i.str));
+                            goto next;
+                        default:
+                            code_numliteral.push_back(i);
+                            goto next;
+                    }
+                default:
+                    code_numliteral.push_back(i);
+                    goto next;
+            }
+            next:
+        }
+        logger.debug("Parsing integer literals... done");
     }
     bool verbose = false;
     void build(std::string code) {
@@ -1332,6 +1420,7 @@ public:
         build_stage_2();
         build_stage_3();
         build_stage_4();
+        build_stage_5();
         // etc.
         logger.info("Finish build for main.");
         includestack.pop_back();
