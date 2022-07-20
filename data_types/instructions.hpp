@@ -35,7 +35,9 @@ enum class ppi_t : uint8_t {
     groupStart,
     groupEnd,
     NewLine, //do not use extensively, its here for compatiblity
-    ppEndExpr
+    ppEndExpr,
+    Integer,
+    Float
 };
 
 enum class Instruction_t : uint8_t {
@@ -61,6 +63,7 @@ enum class Instruction_t : uint8_t {
     Operator,
     Copy,
     Integer,
+    Float,
     String,
     Char,
     Token,
