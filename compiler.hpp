@@ -679,12 +679,15 @@ public:
                         goto nextStatement;
                 }
                 while (char_index < p.str.size()) {
+                    evalch:
                     char ch = *(p.str.begin() + char_index);
                     switch (ch) {
                         case '#':
-                            building = bl::ppi_;
-                            char_index++;
-                            goto statementReset;
+                            if (buffer.empty()) {
+                                building = bl::ppi_;
+                                char_index++;
+                                goto statementReset;
+                            }
                         case '+':
                         case '-':
                         case '*':
@@ -987,6 +990,11 @@ public:
                         case ppi_t::ppEndExpr:
                             logger.warn("Unexpected endexpr token.");
                             goto next;
+                        case ppi_t::Operator:
+                            if (i.str == "%#") {
+                                currinst = ppi_t::String;
+                                goto next;
+                            }
                         default:
                             if (true) {
                                 auto c = definitions.find(i.str);
@@ -1210,7 +1218,12 @@ public:
                                     goto next;
                             }
                     }
-                
+                case ppi_t::String:
+                    if (i.type != ppi_t::Token)
+                        throw Exception("UnexpectedToken","Unexpected character after transform to string literal.");
+                    i = ppi(ppi_t::String, i.str);
+                    code_afterPPI.push_back(i);
+                    goto next;
             }
             goto next;
             parse:
@@ -1306,7 +1319,9 @@ public:
             next:
         }
         logger.debug("Running preprocessor... done");
-
+    }
+    void build_stage_5() {
+        logger.debug("Parsing integer literals...");
     }
     bool verbose = false;
     void build(std::string code) {
