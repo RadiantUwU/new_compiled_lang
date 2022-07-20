@@ -414,6 +414,8 @@ public:
     void build_stage_1(std::string code) {
         logger.debug("Uncommenting code and doing first token split...");
         std::string buffer;
+        std::string buffer_esc;
+        unsigned char t = 0;
         unsigned char c = 0;
         enum class bl {
             str,
@@ -422,16 +424,120 @@ public:
             chr_esc,
             none,
             comment,
-            block_comment
+            block_comment,
+            str_esc_bin,
+            str_esc_oct,
+            str_esc_hex,
+            chr_esc_bin,
+            chr_esc_oct,
+            chr_esc_hex
         } building = bl::none;
         code += '\n';
         for (auto ch : code) {
-            switch (ch) {
+            switch (building) {
+            case bl::str:
+            case bl::chr:
+                if (ch == '\\') 
+                    building = (building == bl::str) ? bl::str_esc : bl::chr_esc;
+                else if (ch == '"' && building == bl::str) 
+                    goto token_break;
+                else if (ch == '\'' && building == bl::chr) 
+                    goto token_break;
+                else if (ch == '\n') 
+                    throw Exception("UnendedQuote","Unended quote for char/string literal.");
+                else 
+                    buffer += ch;
+                break;
+            case bl::str_esc:
+            case bl::chr_esc:
+                switch (ch) {
+                case 'n':
+                    buffer += '\n';
+                    building = (building == bl::str_esc) ? bl::str : bl::chr;
+                    break;
+                case 't':
+                    buffer += '\t';
+                    building = (building == bl::str_esc) ? bl::str : bl::chr;
+                    break;
+                case 'r':
+                    buffer += '\r';
+                    building = (building == bl::str_esc) ? bl::str : bl::chr;
+                    break;
+                case '0':
+                case '1':
+                case '2':
+                case '3':
+                    buffer_esc += ch;
+                    t = 1;
+                    building = (building == bl::str_esc) ? bl::str_esc_oct : bl::chr_esc_oct;
+                    break;
+                case 'x':
+                    t = 0;
+                    building = (building == bl::str_esc) ? bl::str_esc_hex : bl::chr_esc_hex;
+                    break;
+                case 'b':
+                    t = 0;
+                    building = (building == bl::str_esc) ? bl::str_esc_bin : bl::chr_esc_bin;
+                    break;
+                default:
+                    buffer += ch;
+                    building = (building == bl::str_esc) ? bl::str : bl::chr;
+                    break;
+                }
+                break;
+            case bl::str_esc_bin:
+            case bl::chr_esc_bin:
+                if (ch == '0' || ch == '1') {
+                    buffer_esc += ch;
+                    t++;
+                    if (t == 8) {
+                        buffer += (char)std::stoi(buffer_esc, nullptr, 2);
+                        t = 0;
+                        buffer_esc.clear();
+                        building = (building == bl::str_esc_bin) ? bl::str : bl::chr;
+                    }
+                } else {
+                    throw Exception("InvalidBinEscape","Invalid binary escape.");
+                }
+                break;
+            case bl::str_esc_oct:
+            case bl::chr_esc_oct:
+                if (ch >= '0' && ch <= '7') {
+                    buffer_esc += ch;
+                    t++;
+                    if (t == 3) {
+                        buffer += (char)std::stoi(buffer_esc, nullptr, 8);
+                        t = 0;
+                        buffer_esc.clear();
+                        building = (building == bl::str_esc_oct) ? bl::str : bl::chr;
+                    }
+                } else {
+                    throw Exception("InvalidOctEscape","Invalid octal escape.");
+                }
+                break;
+            case bl::str_esc_hex:
+            case bl::chr_esc_hex:
+                if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+                    buffer_esc += ch;
+                    t++;
+                    if (t == 2) {
+                        buffer += (char)std::stoi(buffer_esc, nullptr, 16);
+                        t = 0;
+                        buffer_esc.clear();
+                        building = (building == bl::str_esc_hex) ? bl::str : bl::chr;
+                    }
+                } else {
+                    throw Exception("InvalidHexEscape","Invalid hexadecimal escape.");
+                }
+                break;
+            default:
+                switch (ch) {
                 case '\r':
                     break;
                 case ' ':
                 case '\t':
                 case '\n':
+                    token_break:
                     if (buffer.size() > 0) {
                         pppi p(buffer);
                         switch (building) {
@@ -512,7 +618,9 @@ public:
                     buffer += ch;
                     break;
             }
-            next: (void)0;
+            
+            }
+            next:
         }
         logger.debug("Uncommenting code and doing first token split... done");
     }
