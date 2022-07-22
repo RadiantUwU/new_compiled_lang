@@ -21,6 +21,8 @@
     build_stage_4 doesnt check for definitions (yet)
 */
 
+#define HALF_RAND (((rand() & 0x7FFF) << 1) + (rand() & 0x1))
+#define FULL_RAND ((HALF_RAND << 16) + HALF_RAND)
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 using std::chrono::seconds;
@@ -1417,6 +1419,7 @@ public:
         logger.begin();
         logger.info("Begin build for main.");
         includestack.push_back("<main>");
+        srand(time(NULL));
         build_stage_1(code);
         build_stage_2();
         build_stage_3();
