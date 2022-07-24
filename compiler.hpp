@@ -7,9 +7,10 @@
 #include <sstream>
 #include <initializer_list>
 #include <fstream>
+#include <unordered_map>
 
 #include "data_types/instructions.hpp"
-//#include "data_types/class.hpp" //buggy code, leave it here for now
+#include "data_types/ast.hpp"
 #include "compiler_def_1.hpp"
 #include "data_types/exception.hpp"
 #include "headers/colors.hpp"
@@ -238,7 +239,7 @@ public:
         Minimal,
         Full,
         Maximum
-    } olevel;
+    } olevel = OptimizationLevel::None;
 private:
     class Logger {
         int64_t currt;
@@ -307,6 +308,62 @@ private:
     std::vector<ppi> code_runPPI;
     std::vector<ppi> code_afterPPI;
     std::vector<ppi> code_numliteral;
+    AST code_stg6;
+    AST& current = code_stg6;
+    void ast_back() {
+        if (current.getParent() == nullptr) throw Exception("InvalidInternalOperation", "Attempted to do an AST back operation on root of tree.");
+    }
+    void ast_forward() {
+        if (current.getChildren().size() == 0) throw Exception("InvalidInternalOperation", "Attempted to do an AST forward operation on an object without children");
+        current = current.getChildren().back();
+    }
+    void ast_forward_new() {
+        current = AST().setParent(&current);
+    }
+    void ast_setInst(Instruction_t t) {
+        current.setType(t);
+    }
+    void ast_setCurrent(AST& a) {
+        current = a;
+    }
+    void ast_addAttr(std::string a) {
+        current.pushAttr(a);
+    }
+    void ast_setToken(std::string s) {
+        current.setToken(s);
+    }
+    
+    void ast_new__(Instruction_t t, std::string s) {
+        ast_forward_new();
+        ast_setInst(t);
+        ast_setToken(s);
+    }
+    void ast_new___(Instruction_t t) {
+        ast_forward_new();
+        ast_setInst(t);
+    }
+    
+    void ast_newString(std::string s) {
+        ast_new__(Instruction_t::String,s);
+    }
+    void ast_newChar(std::string s) {
+        ast_new__(Instruction_t::Char,s);
+    }
+    void ast_newToken(std::string s) {
+        ast_new__(Instruction_t::String,s);
+    }
+    void ast_newOperator(std::string s) {
+        ast_new__(Instruction_t::Operator,s);
+    }
+    void ast_newInteger(std::string s) {
+        ast_new__(Instruction_t::Integer,s);
+    }
+    void ast_newFloat(std::string s) {
+        ast_new__(Instruction_t::Float,s);
+    }
+    void ast_newThis() {
+        ast_new___(Instruction_t::This);
+    }
     std::vector<std::string> def_ops;
     struct temp_t {
         std::string s;
@@ -1408,6 +1465,15 @@ public:
         }
         logger.debug("Parsing integer literals... done");
     }
+    void build_stage_6() {
+        logger.debug("Finishing up...");
+        auto oldcode = code_numliteral;
+        code_numliteral.clear();
+        code_stg6.setType(Instruction_t::CodeObject);
+        for (auto i : oldcode) {
+
+        }
+    }
     bool verbose = false;
     void build(std::string code) {
         logger.begin();
@@ -1418,7 +1484,15 @@ public:
         build_stage_2();
         build_stage_3();
         build_stage_4();
+        if (!nobase) {
+            std::vector<ppi> t = code_afterPPI;
+            code_afterPPI.clear();
+            includefile("baselang.meh");
+            code_runPPI = t;
+            build_stage_4();
+        }
         build_stage_5();
+        build_stage_6();
         // etc.
         logger.info("Finish build for main.");
         includestack.pop_back();
