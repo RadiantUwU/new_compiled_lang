@@ -1,5 +1,8 @@
 #pragma once
 #include <vector>
+
+#include "deletable.hpp"
+
 enum class pppi_t : uint8_t {
     String,
     Char,
@@ -77,10 +80,11 @@ enum class Instruction_t : uint8_t {
 class Instruction {
 public:
     Instruction_t type;
-    std::vector<void*> args;
+    std::vector<Deletable> args;
     ~Instruction() {
-        for (auto& arg : args) {
-            delete arg;
-        }
+        args.clear();
     }
+    void add_inst(void* ptr, void (*d_f)(void*)) {
+        args.push_back(Deletable(ptr,d_f));
+    };
 };
