@@ -364,7 +364,27 @@ private:
     void ast_newThis() {
         ast_new___(Instruction_t::This);
     }
-    std::vector<std::string> def_ops;
+    class Operators {
+    public:
+        struct op {
+            std::string opr;
+            signed short order;
+            op(std::string o, signed short v) : opr(o), order(v) {}
+        };
+        std::vector<op> ops;
+        void push_back(std::string s) {
+            ops.push_back(op(s,0));
+        }
+        void push_back(std::string s, signed short v) {
+            ops.push_back(op(s,v));
+        }
+        auto begin() {
+            return ops.begin();
+        }
+        auto end() {
+            return ops.end();
+        } //allow looping
+    } def_ops;
     struct temp_t {
         std::string s;
         unsigned long long l;
@@ -465,6 +485,9 @@ public:
     }
     void addOp(const std::string& oper) {
         if (std::find(def_ops.begin(), def_ops.end(), oper) == def_ops.end()) def_ops.push_back(oper);
+    }
+    void addOp(const std::string& oper, const unsigned short v) {
+        if (std::find(def_ops.begin(), def_ops.end(), oper) == def_ops.end()) def_ops.push_back(oper,v);
     }
     void build_stage_1(std::string code) {
         logger.debug("Uncommenting code and doing first token split...");
@@ -1365,6 +1388,19 @@ public:
                 addOp(ifexpr_parse[0].str);
                 ifexpr_parse.clear();
                 goto next;
+            } else if (ifexpr_parse.size() == 2) {
+                if (ifexpr_parse[0].type != ppi_t::String) goto unknownopdef;
+                if (ifexpr_parse[1].type != ppi_t::Token) goto unknownopdef;
+                signed short c;
+                try {
+                    c = std::stoi(ifexpr_parse[1].str);
+                } catch (...) {
+                    goto unknownopdef;
+                }
+                logger.debug("Defining operator " + ifexpr_parse[0].str + " with priority(lower higher) " + ifexpr_parse[1].str);
+                addOp(ifexpr_parse[0].str,c);
+                ifexpr_parse.clear();
+                goto next;
             } else {
                 unknownopdef:
                 logger.error("Unknown #opdef argument(s).");
@@ -1466,10 +1502,18 @@ public:
         logger.debug("Parsing integer literals... done");
     }
     void build_stage_6() {
-        logger.debug("Finishing up...");
+        logger.debug("Parsing...");
         auto oldcode = code_numliteral;
         code_numliteral.clear();
         code_stg6.setType(Instruction_t::CodeObject);
+        enum class bl {
+            none,
+            cls,
+            func,
+            member,
+            var,
+            opfunc,
+        };
         for (auto i : oldcode) {
 
         }
