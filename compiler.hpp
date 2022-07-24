@@ -15,12 +15,6 @@
 #include "headers/colors.hpp"
 #include "headers/stringUtilities.hpp"
 #include "headers/to_string.hpp"
-/*
-    build_stage_1 is broken, escape sequences not handled
-    Definition.parse() not done
-    build_stage_4 doesnt check for definitions (yet)
-*/
-
 #define HALF_RAND (((rand() & 0x7FFF) << 1) + (rand() & 0x1))
 #define FULL_RAND ((HALF_RAND << 16) + HALF_RAND)
 using std::chrono::duration_cast;
