@@ -74,8 +74,10 @@ enum class Instruction_t : uint8_t {
     True,
     False,
     This,
+    Class,
     Super,
-    Float
+    Float,
+    CodeObject
 };
 class Instruction {
 public:
