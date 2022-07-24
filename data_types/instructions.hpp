@@ -74,14 +74,9 @@ enum class Instruction_t : uint8_t {
     True,
     False,
     This,
-<<<<<<< Updated upstream
     Class,
     Super,
-    Float,
     CodeObject
-=======
-    Super
->>>>>>> Stashed changes
 };
 class Instruction {
 public:
