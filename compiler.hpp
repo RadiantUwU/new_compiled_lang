@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <initializer_list>
+#include <unordered_map>
 #include <fstream>
 #include <unordered_map>
 
@@ -187,6 +188,21 @@ public:
                 case ppi_t::Delimiter:
                     ss << "Delimiter";
                     break;
+                case ppi_t::groupStart:
+                    ss << "groupStart";
+                    break;
+                case ppi_t::groupEnd:
+                    ss << "groupEnd";
+                    break;
+                case ppi_t::ppEndExpr:
+                    ss << "ppEndExpr";
+                    break;
+                case ppi_t::Integer:
+                    ss << "Integer";
+                    break;
+                case ppi_t::Float:
+                    ss << "Float";
+                    break;
 
             }
             ss << ", " << str << ")";
@@ -241,6 +257,7 @@ public:
         Maximum
     } olevel = OptimizationLevel::None;
 private:
+    const char* arr = "0123456789abcdef";
     class Logger {
         int64_t currt;
         bool& verbose;
@@ -312,6 +329,7 @@ private:
     AST& current = code_stg6;
     void ast_back() {
         if (current.getParent() == nullptr) throw Exception("InvalidInternalOperation", "Attempted to do an AST back operation on root of tree.");
+        current = *(current.getParent());
     }
     void ast_forward() {
         if (current.getChildren().size() == 0) throw Exception("InvalidInternalOperation", "Attempted to do an AST forward operation on an object without children");
@@ -369,14 +387,40 @@ private:
         struct op {
             std::string opr;
             signed short order;
+            std::vector<std::string> attr;
             op(std::string o, signed short v) : opr(o), order(v) {}
+            op() = default;
+            bool isbraces() {
+                if (opr.size() == 2) {
+                    if (opr == "()") return true;
+                    if (opr == "[]") return true;
+                    if (opr == "{}") return true;
+                }
+                return false;
+            }
         };
         std::vector<op> ops;
-        void push_back(std::string s) {
+        void push_back(const std::string& s) {
             ops.push_back(op(s,0));
         }
-        void push_back(std::string s, signed short v) {
+        void push_back(const std::string& s, signed short v) {
             ops.push_back(op(s,v));
+        }
+        void push_back(const std::string& s, signed short v, const std::vector<std::string>& a) {
+            ops.push_back(op(s, v));
+            op& c = ops.back();
+            for (auto& i : a) {
+                c.attr.push_back(i);
+            }
+        }
+        auto front() {
+            return ops.front();
+        }
+        auto back() {
+            return ops.back();
+        }
+        auto size() {
+            return ops.size();
         }
         auto begin() {
             return ops.begin();
@@ -384,7 +428,16 @@ private:
         auto end() {
             return ops.end();
         } //allow looping
+        auto findbyattr(const std::string& c) {
+            for (auto& i : ops) {
+                if (i.attr.begin() != i.attr.end())
+                if (std::find(i.attr.begin(),i.attr.end(),c) != i.attr.end())
+                return i;
+            }
+            return op();
+        }
     } def_ops;
+    using op = Operators::op;
     struct temp_t {
         std::string s;
         unsigned long long l;
@@ -484,17 +537,19 @@ public:
         definitions[name] = Definition(args, val);
     }
     void addOp(const std::string& oper) {
-        if (std::find(def_ops.begin(), def_ops.end(), oper) == def_ops.end()) def_ops.push_back(oper);
+        def_ops.push_back(oper);
     }
     void addOp(const std::string& oper, const unsigned short v) {
-        if (std::find(def_ops.begin(), def_ops.end(), oper) == def_ops.end()) def_ops.push_back(oper,v);
+        def_ops.push_back(oper,v);
+    }
+    void addOp(const std::string& oper, const unsigned short v, std::vector<std::string> attr) {
+        def_ops.push_back(oper,v,attr);
     }
     void build_stage_1(std::string code) {
         logger.debug("Uncommenting code and doing first token split...");
         std::string buffer;
         std::string buffer_esc;
         unsigned char t = 0;
-        unsigned char c = 0;
         enum class bl {
             str,
             str_esc,
@@ -627,6 +682,8 @@ public:
                                 p.type = pppi_t::Char;
                                 p.str += ch;
                                 break;
+                            default:
+                                break;
                         }
                         uncommentedcode.push_back(p);
                         buffer.clear();
@@ -636,14 +693,14 @@ public:
                 case '/':
                     if (building == bl::none) {
                         if (buffer.back() == '/') {
-                            building == bl::comment;
+                            building = bl::comment;
                             buffer.pop_back();
                             if (buffer.size() > 0) {
                                 uncommentedcode.push_back(pppi(buffer));
                                 buffer.clear();
                             }
                         } else if (buffer.back() == '*') {
-                            building == bl::block_comment;
+                            building = bl::block_comment;
                             buffer.pop_back();
                             if (buffer.size() > 0) {
                                 uncommentedcode.push_back(pppi(buffer));
@@ -655,7 +712,7 @@ public:
                         
                     } else if (building == bl::block_comment) {
                         if (buffer.back() == '*') {
-                            building == bl::none;
+                            building = bl::none;
                             buffer.clear();
                         } else {
                             buffer += ch;
@@ -699,6 +756,7 @@ public:
             
             }
             next:
+            (void)0;
         }
         logger.debug("Uncommenting code and doing first token split... done");
     }
@@ -755,6 +813,7 @@ public:
                         flush_build2_buffer_compiler__comp_bl2_stg
                         code_interPPI.push_back(ppi(ppi_t::String,p.str));
                         goto nextStatement;
+                    default: break;
                 }
                 while (char_index < p.str.size()) {
                     evalch:
@@ -1037,9 +1096,8 @@ public:
                         i = i.removeelse();
                         goto reset;
                     }
+                default:
                     goto next;
-                
-
             }
             switch (currinst) {
                 case ppi_t::NewLine:
@@ -1074,6 +1132,7 @@ public:
                                 goto next;
                             }
                         default:
+                            defcheck:
                             if (true) {
                                 auto c = definitions.find(i.str);
                                 if (c != definitions.end()) {
@@ -1101,7 +1160,13 @@ public:
                                         defname = c->first;
                                     }
                                     goto next;
-
+                                } else if (i.str == "__RAND__") {
+                                    uint32_t num = FULL_RAND;
+                                    i.str = "__rand_out_";
+                                    for (unsigned char j = 0; j < 8; j++) {
+                                        i.str+= arr[(num >> (4*(7-j))) % 16];
+                                    }
+                                    goto reset;
                                 } else {
                                     code_afterPPI.push_back(i);
                                     goto next;
@@ -1115,7 +1180,7 @@ public:
                     i = code_afterPPI.back();
                     code_afterPPI.pop_back();
                     currinst = ppi_t::NewLine;
-                    goto reset;
+                    goto defcheck;
                 case ppi_t::ppDef:
                     switch (i.type) {
                         case ppi_t::ppdef_name:
@@ -1401,6 +1466,23 @@ public:
                 addOp(ifexpr_parse[0].str,c);
                 ifexpr_parse.clear();
                 goto next;
+            } else if (ifexpr_parse.size() == 3) {
+                if (ifexpr_parse[0].type != ppi_t::String) goto unknownopdef;
+                if (ifexpr_parse[1].type != ppi_t::Token) goto unknownopdef;
+                if (ifexpr_parse[2].type != ppi_t::String) goto unknownopdef;
+                signed short c;
+                try {
+                    c = std::stoi(ifexpr_parse[1].str);
+                } catch (...) {
+                    goto unknownopdef;
+                }
+                logger.debug("Defining operator " + ifexpr_parse[0].str + " with priority(highest first) " + ifexpr_parse[1].str);
+                op o = op(ifexpr_parse[0].str,c);
+                auto& at = o.attr;
+                for (auto i : split(ifexpr_parse[2].str,',')) 
+                    at.push_back(i);
+                ifexpr_parse.clear();
+                goto next;
             } else {
                 unknownopdef:
                 logger.error("Unknown #opdef argument(s).");
@@ -1408,6 +1490,7 @@ public:
                 goto next;
             }
             next:
+            (void)0;
         }
         logger.debug("Running preprocessor... done");
     }
@@ -1498,6 +1581,7 @@ public:
                     goto next;
             }
             next:
+            (void)0;
         }
         logger.debug("Parsing integer literals... done");
     }
@@ -1505,7 +1589,7 @@ public:
         logger.debug("Parsing...");
         auto oldcode = code_numliteral;
         code_numliteral.clear();
-        code_stg6.setType(Instruction_t::CodeObject);
+        code_stg6.setType(Instruction_t::InitCodeObject);
         enum class bl {
             none,
             cls,
@@ -1514,9 +1598,26 @@ public:
             var,
             opfunc,
         };
+        class blr_ {
+            public:
+            std::vector<bl> blv;
+            bool isInit(Compiler* co) {
+                AST& c = co->current;
+                while (true) {
+                    auto t = c.getType();
+                    if (t == Instruction_t::CodeObject) return false;
+                    else if (t == Instruction_t::InitCodeObject) return true;
+                    c = *(c.getParent());
+                }
+            }
+            blr_() {
+                blv.push_back(bl::none);
+            }
+        } blr;
         for (auto i : oldcode) {
 
         }
+        logger.debug("Parsing... done");
     }
     bool verbose = false;
     void build(std::string code) {

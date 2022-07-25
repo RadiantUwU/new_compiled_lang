@@ -1,0 +1,160 @@
+//#pragma once
+#define OPFUNC __attr__(opfunc)
+
+#defop && 0 "labelref"
+#defop + 1
+#defop - 1
+#defop * 2 "dereference"
+#defop / 2
+#defop % 2
+#defop & 4 "reference"
+#defop | 3
+#defop ^ 4
+#defop [] 10 "index"
+#defop () 10 "call"
+
+#define void __void
+
+extern void cls();
+extern void abort();
+extern void reset();
+
+extern class thread;
+extern thread* thr_get_current();
+extern void THR_begin();
+extern void THR_end();
+extern void THR_return();
+extern void THR_yield();
+extern void THR_kill();
+extern void thr_start(thread*);//runs thr_reset() then thr_resume
+extern void thr_resume(thread*);
+extern void thr_kill(thread*);
+extern void thr_reset(thread*);
+extern void thr_pause(thread*);
+
+extern class __heap_traits {
+    public void* ptr;
+    public __size_t size;
+    private __heap_traits(void* ptr, __size_t size) {
+        this->ptr = ptr;
+        this->size = size;
+    }
+}
+
+extern __heap_traits newheap();
+extern void free(__heap_traits);
+
+#define false (0)
+#define true (1)
+
+#ifdef __uint_8_t
+    #define uint_8_t __uint_8_t
+    __attr__(novirtual) extern class int_8_t : __uint_8_t;
+    #define ubyte __uint_8_t
+    #define byte __uint_8_t
+    #define sbyte int_8_t
+    #define char __uint_8_t
+    extern void exit(ubyte);
+    extern void print(ubyte*,__size_t);
+    extern ubyte getch();
+    extern ubyte chavail();
+    extern ubyte rand();
+    extern ubyte thr_getstatus(thread*);
+    extern ubyte thr_status_none;
+    extern ubyte thr_status_running;
+    extern ubyte thr_status_paused;
+    extern ubyte exists(__heap_traits);
+    #define BIGGEST_UNSIGNED_NUM_T __uint_8_t
+    #define BIGGEST_SIGNED_NUM_T int_8_t
+    #define SMALLEST_SIGNED_NUM_T int_8_t
+    #define SMALLEST_UNSIGNED_NUM_T __uint_8_t
+    #define int int_8_t
+    #define uint __uint_8_t
+#elifdef __uint_4_t
+    #define uint_4_t __uint_4_t
+    extern class int_4_t : __uint_4_t;
+    #define ubyte __uint_4_t
+    #define byte __uint_4_t
+    #define sbyte int_4_t
+    #define char __uint_4_t
+    extern void exit(ubyte);
+    extern void print(ubyte*,__size_t);
+    extern ubyte getch();
+    extern ubyte chavail();
+    extern ubyte rand();
+    extern ubyte thr_getstatus(thread*);
+    extern ubyte thr_status_none;
+    extern ubyte thr_status_running;
+    extern ubyte thr_status_paused;
+    extern ubyte exists(__heap_traits);
+    #define BIGGEST_UNSIGNED_NUM_T __uint_4_t
+    #define BIGGEST_SIGNED_NUM_T int_4_t
+    #define SMALLEST_SIGNED_NUM_T int_4_t
+    #define SMALLEST_UNSIGNED_NUM_T __uint_4_t
+    #define int int_4_t
+    #define uint __uint_4_t
+#else
+    #error "Cannot find bit size for target."
+#endif
+
+
+#define NATIVE_BIT_SIZE __bitsarch //4,8,16,32,64,etc.
+
+#ifdef __uint_16_t
+    #define uint_16_t __uint_16_t
+    __attr__(novirtual) extern class int_16_t : __uint_16_t;
+    #define ushort __uint_16_t
+    #define short int_16_t
+    #define sshort int_16_t
+    #undef BIGGEST_SIGNED_NUM_T
+    #undef BIGGEST_UNSIGNED_NUM_T
+    #define BIGGEST_SIGNED_NUM_T int_16_t
+    #define BIGGEST_UNSIGNED_NUM_T __uint_16_t
+    #undef int
+    #undef uint
+    #define int int_16_t
+    #define uint __uint_16_t
+    #ifdef __allwchars_chars
+        #define wchar __uint_8_t
+    #else
+        #define wchar __uint_16_t
+    #endif
+#else
+    #define wchar __uint_8_t
+#endif
+#ifdef __uint_16_t
+    #ifdef __allchars_wchars
+        #undef char
+        #define char __uint_16_t
+    #endif
+#endif
+
+#ifdef __uint_32_t
+    #define uint_32_t __uint_32_t
+    __attr__(novirtual) extern class int_32_t : __uint_32_t;
+    #define umed __uint_32_t
+    #define med int_32_t
+    #define smed int_32_t
+    #undef BIGGEST_SIGNED_NUM_T
+    #undef BIGGEST_UNSIGNED_NUM_T
+    #define BIGGEST_SIGNED_NUM_T int_32_t
+    #define BIGGEST_UNSIGNED_NUM_T __uint_32_t
+    #ifdef __uint_64_t
+        #undef int
+        #undef uint
+        #define int int_32_t
+        #define uint __uint_32_t
+    #endif
+#endif
+
+#ifdef __uint_64_t
+    #define uint_64_t __uint_64_t
+    __attr__(novirtual) extern class int_64_t : __uint_64_t;
+    #define ulong __uint_64_t
+    #define long int_64_t
+    #define slong int_64_t
+    #undef BIGGEST_SIGNED_NUM_T
+    #undef BIGGEST_UNSIGNED_NUM_T
+    #define BIGGEST_SIGNED_NUM_T int_64_t
+    #define BIGGEST_UNSIGNED_NUM_T __uint_64_t
+#endif
