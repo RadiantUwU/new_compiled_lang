@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <vector>
 
 #include "deletable.hpp"
@@ -76,7 +77,8 @@ enum class Instruction_t : uint8_t {
     This,
     Class,
     Super,
-    CodeObject
+    CodeObject,
+    InitCodeObject
 };
 class Instruction {
 public:
