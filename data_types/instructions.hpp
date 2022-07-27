@@ -60,6 +60,7 @@ enum class Instruction_t : uint8_t {
     Return,
     Allocate,
     Funcdef,
+    FuncArgs,
     Classdef,
     Jump,
     Call,
@@ -78,7 +79,7 @@ enum class Instruction_t : uint8_t {
     Class,
     Super,
     CodeObject,
-    InitCodeObject
+    InitCodeObject,
 };
 class Instruction {
 public:
