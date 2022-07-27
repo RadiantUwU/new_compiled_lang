@@ -32,8 +32,8 @@
 #defop ~ 4
 #defop >= 8
 #defop <= 8
-#defop [] 10 "index"
-#defop () 10 "call"
+//#defop [] 10 "index" //defined internally
+//#defop () 10 "call" 
 
 #define void __void
 
