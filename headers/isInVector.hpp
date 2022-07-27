@@ -1,9 +1,11 @@
 #pragma once
 #include<vector>
+#include<algorithm>
 template <typename T>
-bool isInVector(std::vector<T> l, T v) {
-    for (T i : l) {
-        if (i == v) return true;
-    }
-    return false;
+inline bool isInVector(std::vector<T> l, T v) {
+    return (std::find(l.begin(),l.end(),v)) != l.end();
+}
+template <typename T>
+inline auto findInVector(std::vector<T> l, T v) {
+    return (std::find(l.begin(),l.end(),v));
 }
