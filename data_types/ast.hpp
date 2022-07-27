@@ -35,6 +35,7 @@ public:
         while (this->parent != nullptr) {
             c = c->parent;
         }
+        return c;
     }
     Instruction_t getType() {
         return ty;
