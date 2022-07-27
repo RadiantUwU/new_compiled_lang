@@ -5,6 +5,7 @@
 #define public __attr__(publicaccessor)
 #define protected __attr__(protectedaccessor)
 #define private __attr__(privateaccessor)
+#define static __attr__(staticmember)
 
 #define opf(op,r,a,b) extern OPFUNC __attr__(inline) r op (a,b);
 
@@ -20,6 +21,16 @@
 #defop & 4 "reference"
 #defop | 3
 #defop ^ 4
+#defop ++ 5
+#defop -- 5
+#defop = 9 "set"
+#defop == 8
+#defop > 8
+#defop < 8
+#defop != 8
+#defop ~ 4
+#defop >= 8
+#defop <= 8
 #defop [] 10 "index"
 #defop () 10 "call"
 
