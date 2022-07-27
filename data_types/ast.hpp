@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <tuple>
+#include <sstream>
 
 #include "instructions.hpp"
 #include "exception.hpp"
@@ -13,6 +15,20 @@ class AST {
     Instruction_t ty;
     std::vector<std::string> attrs;
     std::string token;
+    std::string str_repr(std::string s) {
+        std::string sc = "\"";
+        for (char c : s) {
+            if (c == '\\') {
+                sc += "\\\\";
+            } else if (c == '"') {
+                sc += "\\\"";
+            } else {
+                sc += c;
+            }
+        }
+        sc += "\"";
+        return sc;
+    }
 public:
     AST* getRoot() {
         AST* c = this;
@@ -59,6 +75,25 @@ public:
     }
     void destroy() {
         if (parent != nullptr) parent->children.erase(std::find(parent->children.begin(),parent->children.end(),*this));
+    }
+    std::tuple<std::string, std::string> repr_self() {
+        std::stringstream ss;
+        ss << (unsigned short)ty;
+        std::string beg = "AST(token=" + str_repr(token) + ",children=[";
+        std::string end = "],attrs=[";
+        for (auto s : attrs) end += str_repr(s);
+        end += "],ty=" + ss.str() + ")";
+        return std::make_tuple(beg,end);
+    }
+    std::string repr() {
+        std::tuple<std::string, std::string> repr_self_out = repr_self();
+        std::string str = std::get<0>(repr_self_out);
+        for (auto& a : children) {
+            str += a.repr() + ",";
+        }
+        if (children.size() > 0) str.pop_back();
+        str += std::get<1>(repr_self_out);
+        return str;
     }
     AST() = default;
 };
