@@ -26,8 +26,8 @@
 #defop -- 5
 #defop = 9 "set"
 #defop == 8
-#defop > 8
-#defop < 8
+#defop > 8 //please define this operator for templates to work
+#defop < 8 //please define this operator for templates to work
 #defop != 8
 #defop ~ 4
 #defop >= 8
