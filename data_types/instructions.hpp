@@ -63,6 +63,7 @@ enum class Instruction_t : uint8_t {
     FuncArgs,
     Classdef,
     Classbase,
+    Template,
     Jump,
     Call,
     Label,
