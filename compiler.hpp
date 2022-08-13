@@ -4,11 +4,14 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <new>
+#include <ostream>
 #include <sstream>
 #include <initializer_list>
 #include <unordered_map>
 #include <fstream>
 #include <unordered_map>
+#include <memory>
 
 #include "data_types/instructions.hpp"
 #include "data_types/ast.hpp"
@@ -17,6 +20,7 @@
 #include "headers/colors.hpp"
 #include "headers/stringUtilities.hpp"
 #include "headers/to_string.hpp"
+#include "headers/isInVector.hpp"
 #define HALF_RAND (((rand() & 0x7FFF) << 1) + (rand() & 0x1))
 #define FULL_RAND ((HALF_RAND << 16) + HALF_RAND)
 using std::chrono::duration_cast;
@@ -225,12 +229,32 @@ public:
         public:
         std::vector<std::string> args;
         std::vector<ppi> val;
-        std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
+        virtual std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
             std::vector<ppi> ret;
-            if (args_a.size() != args.size())
+            std::vector<ppi>* args_aap = nullptr;
+            if ((args_a.size() != args.size()) && args.back() != "__va_args__")
                 throw Exception("DefinitionParsingError", "args_a.size() != args.size(); not enough/too many arguments given to macro call.");
+            if (args.back() == "__va_args__") {
+                args_aap = new std::vector<ppi>;
+                unsigned short optargs = args_a.size() - (args.size() - 1);
+                for (unsigned short argp = (args.size() - 1); argp < (args_a.size() + 1);argp++) {
+                    for (auto i : args_a[argp]) args_aap->push_back(i);
+                    args_aap->push_back(ppi(ppi_t::Delimiter,","));
+                }
+                if (optargs > 0) args_aap->pop_back();
+                for (unsigned short i = 0; i < optargs; i++) args_a.pop_back();
+                
+            }
             for (ppi& p : val) {
                 if (p.type == ppi_t::Token) {
+                    if (p.str == "__VA_ARGS__") {
+                        if (args_aap != nullptr) {
+                            for (auto& p : *args_aap) {
+                                ret.push_back(p);
+                            }
+                        }
+                        goto next;
+                    }
                     auto findout = std::find(args.begin(),
                                   args.end(),
                                   p.str);
@@ -239,9 +263,14 @@ public:
                         for (auto& p : args_a[index]) {
                             ret.push_back(p);
                         }
-                    }
+                    } else goto notfound;
+                } else {
+                    notfound:
+                    ret.push_back(p);
                 }
+                next: ;
             }
+            if (args_aap != nullptr) delete args_aap;
             return ret;
         }
         Definition(const std::vector<std::string>& args, const std::vector<ppi>& val) : args(args), val(val) {};
@@ -286,6 +315,56 @@ private:
         }
         
     } logger;
+    class ForEveryDefinition : public Definition {
+    public:
+        virtual std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
+            std::vector<ppi> ret;
+            if (args_a.size() > 1) {
+                if (args_a[0].size() != 1) return ret;
+                if (args_a[0][0].type != ppi_t::Token) return ret;
+                for (unsigned short i = 1; i < args_a.size(); i++) {
+                    ret.push_back(args_a[0][0]);
+                    ret.push_back(ppi(ppi_t::groupStart,"("));
+                    for (auto& iv : args_a[i]) ret.push_back(iv);
+                    ret.push_back(ppi(ppi_t::groupEnd,")"));
+                }
+            }
+            return ret;
+        }
+    };
+    class GetTDefDefinition : public Definition {
+        virtual std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
+            std::vector<ppi> ret;
+            if (args_a.size() > 1) {
+                if (args_a[0].size() != 1) return ret;
+                if (args_a[0][0].type != ppi_t::Token) return ret;
+                unsigned short c = std::stoi(args_a[0][0].str);
+                args_a.erase(args_a.begin());
+                if (c >= args_a.size()) return ret;
+                ret = std::vector<ppi>(args_a[c].begin(),args_a[c].end());
+            }
+            return ret;
+        }
+    };
+    class HasArgsDefinition : public Definition {
+        virtual std::vector<ppi> parse(std::vector<std::vector<ppi>> args_a) {
+            std::vector<ppi> ret = {
+                ppi(ppi_t::ppIfdef,"ifdef"),
+                ppi(ppi_t::Token,"HAS_ARGS_CHK"),
+                ppi(ppi_t::ppEndExpr),
+                ppi(ppi_t::ppUndef,"undef"),
+                ppi(ppi_t::ppdef_name,"HAS_ARGS_CHK"),
+                ppi(ppi_t::ppEndif,"endif")
+            };
+            if (args_a.size() > 0) {
+                ret.push_back(ppi(ppi_t::ppDef,"define"));
+                ret.push_back(ppi(ppi_t::ppdef_name,"HAS_ARGS_CHK"));
+                ret.push_back(ppi(ppi_t::ppdef_value_start));
+                ret.push_back(ppi(ppi_t::ppdef_value_end));
+            }
+            return ret;
+        }
+    };
     std::vector<std::string> codes;
     std::vector<std::string> includestack;
     std::vector<std::string> defstack;
@@ -327,6 +406,7 @@ private:
     std::vector<ppi> code_numliteral;
     AST code_stg6;
     AST& current = code_stg6;
+    friend class blr_;
     void ast_back() {
         if (current.getParent() == nullptr) throw Exception("InvalidInternalOperation", "Attempted to do an AST back operation on root of tree.");
         current = *(current.getParent());
@@ -378,6 +458,9 @@ private:
     }
     void ast_newFloat(std::string s) {
         ast_new__(Instruction_t::Float,s);
+    }
+    void ast_newClass(std::string s) {
+        ast_new__(Instruction_t::Class,s);
     }
     void ast_newThis() {
         ast_new___(Instruction_t::This);
@@ -790,6 +873,8 @@ public:
                                     case bl2::tok:\
                                         typep = ppi_t::Token;\
                                         break;\
+                                    default:\
+                                        break;\
                                 }\
                                 code_interPPI.push_back(ppi(typep,buffer));\
                                 buffer.clear();\
@@ -1186,6 +1271,9 @@ public:
                         case ppi_t::ppdef_name:
                             temp[0] = i.str;
                             def = Definition();
+                            if (definitions.find(i.str) != definitions.end()) {
+                                throw Exception("AlreadyDefinedError","Cannot redefine \"" + i.str +"\".");
+                            }
                             goto next;
                         case ppi_t::ppdef_arg:
                             def.args.push_back(i.str);
@@ -1193,6 +1281,8 @@ public:
                         case ppi_t::ppdef_value_start:
                             currinst = ppi_t::ppdef_value_start;
                             goto next;
+                        default:
+                            throw Exception("UnexpectedToken","Unexpected token after #define.");
                     }
                 case ppi_t::ppdef_value_start:
                     switch (i.type) {
@@ -1367,6 +1457,7 @@ public:
                     i = ppi(ppi_t::String, i.str);
                     code_afterPPI.push_back(i);
                     goto next;
+                default: break;
             }
             goto next;
             parse:
@@ -1593,15 +1684,26 @@ public:
         enum class bl {
             none,
             cls,
+            clsbase,
+            clsbody,
+            clstemplate,
             func,
-            member,
+            funcbody,   
             var,
-            opfunc,
+            set,
+            label,
+            namesp,
+            namespbody,
+            enum_,
+            enumbody,
+            expression,
+            attr
         };
         class blr_ {
             public:
             std::vector<bl> blv;
-            bool isInit(Compiler* co) {
+            Compiler* co;
+            bool isInit() {
                 AST& c = co->current;
                 while (true) {
                     auto t = c.getType();
@@ -1610,12 +1712,366 @@ public:
                     c = *(c.getParent());
                 }
             }
+            bl get() {
+                return blv.back();
+            }
+            void push(bl v) {
+                blv.push_back(v);
+            }
+            void push(ppi v) {
+                buf.push_back(v);
+            }
+            void pop() {
+                blv.pop_back();
+            }
             blr_() {
                 blv.push_back(bl::none);
             }
+            std::vector<std::string> attrs;
+            std::vector<ppi> buf;
+            unsigned short attrbraces = 0;
+            unsigned short braces1 = 0;
+            unsigned short braces2 = 0;
+            unsigned short braces3 = 0;
+            unsigned char defstg = 0; //class,namespace,function,etc.
+            bool parsedexpr = false;
+            void clear() {
+                attrs.clear();
+                buf.clear();
+            }
+            void pushattrs() {
+                for (std::string i : attrs) co->ast_addAttr(i);
+                attrs.clear();
+            }
+            void pushattr(const std::string& s) {
+                attrs.push_back(s);
+            }
         } blr;
+        blr.co = this;
         for (auto i : oldcode) {
-
+            reset:
+            switch (blr.get()) {
+                case bl::none:
+                    if (i == ppi(ppi_t::Token,"__attr__")) {
+                        blr.push(bl::attr);
+                        goto next;
+                    } else if (i.type == ppi_t::Token) {
+                        if (i.str == "class") {
+                            blr.push(bl::cls);
+                            ast_new___(Instruction_t::Classdef);
+                            goto next;
+                        } else if (i.str == "namespace") {
+                            blr.push(bl::namesp);
+                            ast_new___(Instruction_t::Classdef);
+                            goto next;
+                        } else if (i.str == "enum") {
+                            blr.push(bl::enum_);
+                            ast_new___(Instruction_t::Classdef);
+                            goto next;
+                        } else {
+                            blr.push(bl::var);
+                            blr.push(i);
+                            goto next;
+                        }
+                    }
+                case bl::attr:
+                    switch (blr.defstg) {
+                        case 0:
+                            if (i != ppi(ppi_t::groupStart,"(")) throw Exception(
+                                "UnexpectedToken",
+                                "Unexpected token after __attr__"
+                            );
+                            blr.defstg++;
+                            goto next;
+                        case 1:
+                            if (i.type != ppi_t::Token && i.type != ppi_t::String) throw Exception(
+                                "UnexpectedToken",
+                                "Unexpected token after __attr__("
+                            );
+                            blr.defstg++;
+                            blr.pushattr(i.str);
+                            goto next;
+                        case 2:
+                            if (i == ppi(ppi_t::Delimiter,",")) {
+                                blr.defstg = 1;
+                                goto next;
+                            } else if (i == ppi(ppi_t::groupEnd,")")) {
+                                blr.defstg = 0;
+                                blr.pop();
+                                goto next;
+                            } else throw Exception(
+                                "UnexpectedToken",
+                                "UnexpectedToken after attr"
+                            );
+                    }
+                case bl::var:
+                switch (blr.defstg++) {
+                    case 0:
+                        if (i.type == ppi_t::Operator) {
+                            if (isInVector(blr.attrs,(std::string)"opfunc")) {
+                                blr.pop();
+                                blr.defstg = 0;
+                                blr.push(bl::func);
+                                goto reset;
+                            }
+                            auto opv = def_ops.findbyattr("set");
+                            if (endsWith(i.str, opv.opr)) {
+                                blr.defstg = 0;
+                                blr.pop();
+                                blr.push(bl::set);
+                                blr.push(bl::expression);
+                                ast_newOperator(i.str);
+                                ast_addAttr("set");
+                                blr.pushattrs();
+                                ast_newToken(blr.buf[0]);
+                                ast_back();
+                                blr.clear();
+                                goto next;
+                            } else if (i.str == ":") {
+                                blr.pop();
+                                blr.defstg = 0;
+                                ast_new__(Instruction_t::Label,blr.buf[0]);
+                                blr.clear();
+                                ast_back();
+                                goto next;
+                            }
+                        }
+                        if (i.type != ppi_t::Token) throw Exception(
+                            "UnexpectedToken",
+                            "Expected a token after variable definition, got " + (std::string)i
+                        );
+                        blr.push(i);
+                        goto next;
+                    case 1:
+                        if (i == ppi(ppi_t::groupStart,"(")) {
+                            blr.pop();
+                            blr.push(bl::func);
+                            ast_new__(Instruction_t::Funcdef, i.str);
+                            blr.pushattrs();
+                            ast_newClass(blr.buf[0]);
+                            ast_back();
+                            ast_new___(Instruction_t::FuncArgs);
+                            blr.clear();
+                            goto next;
+                        } else if (i.type == ppi_t::Operator) {
+                            auto opv = def_ops.findbyattr("set");
+                            if (endsWith(i.str, opv.opr)) {
+                                blr.push(bl::expression);
+                                ast_new___(Instruction_t::Allocate);
+                                ast_newClass(blr.buf[0].str);
+                                ast_back();
+                                ast_newToken(blr.buf[1].str);
+                                ast_back();
+                                ast_back();
+                                ast_newOperator(i.str);
+                                ast_addAttr("set");
+                                blr.pushattrs();
+                                ast_newToken(blr.buf[1]);
+                                ast_back();
+                                blr.clear();
+                                goto next;
+                                
+                            }
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Expected a token after variable definition, got " + (std::string)i
+                        );
+                    default:
+                        blr.pop();
+                        ast_back();
+                        blr.defstg = 0;
+                        goto next;
+                }
+                case bl::set:
+                    blr.pop();
+                    ast_back();
+                    goto next;
+                case bl::func:
+                switch (blr.defstg++) {
+                    case 0:
+                        ast_new__(Instruction_t::Funcdef, i.str);
+                        blr.pushattrs();
+                        ast_newClass(blr.buf[0]);
+                        blr.clear();
+                        ast_back();
+                        goto next;
+                    case 1:
+                        if (i != ppi(ppi_t::groupStart,"(")) throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after function definition."
+                        );
+                        ast_new___(Instruction_t::FuncArgs);
+                        goto next;
+                    case 2:
+                        if (i.type != ppi_t::Token) throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after function arguments definition."
+                        );
+                        blr.push(i);
+                        goto next;
+                    case 3:
+                        if (i.type != ppi_t::Token) throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after function arguments definition."
+                        );
+                        ast_newToken(i.str);
+                        ast_newClass(blr.buf[0]);
+                        blr.clear();
+                        ast_back();
+                        ast_back();
+                        goto next;
+                    case 4:
+                        if (i == ppi(ppi_t::groupEnd,")")) {
+                            ast_back();
+                        } else if (i == ppi(ppi_t::Delimiter,",")) {
+                            blr.defstg = 2;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after function argument definition."
+                        );
+                        goto next;
+                    case 5:
+                        if (i == ppi(ppi_t::groupStart, "{")) {
+                            blr.pop();
+                            blr.push(bl::funcbody);
+                            blr.clear();
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::Delimiter, ";")) {
+                            ast_back();
+                            blr.clear();
+                            blr.pop();
+                            blr.defstg = 0;
+                            goto next;
+                        }
+                        else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after function general definition"
+                        );
+                }
+                case bl::cls:
+                switch (blr.defstg++) {
+                    case 0:
+                       ast_setToken(i.str);
+                       blr.pushattrs();
+                       blr.clear();
+                       goto next;
+                    case 1:
+                        if (i == ppi(ppi_t::Delimiter,";")) {
+                            ast_back();
+                            blr.pop();
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::Operator, ":")) {
+                            blr.pop();
+                            blr.push(bl::clsbase);
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::groupStart,"{")) {
+                            blr.pop();
+                            blr.push(bl::clsbody);
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::Operator,"<")) {
+                            ast_new___(Instruction_t::Template);
+                            blr.push(bl::clstemplate);
+                            blr.defstg = 0;
+                            goto next;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after start of class definition."
+                        );
+                }
+                case bl::clsbase:
+                    if (i == ppi(ppi_t::Token,"__attr__")) {
+                        blr.push(bl::attr);
+                        goto next;
+                    } else if (i.type == ppi_t::Token) {
+                        ast_new__(Instruction_t::Classbase,i.str);
+                        blr.pushattrs();
+                        ast_back();
+                        goto next;
+                    } else if (i == ppi(ppi_t::groupStart,"{")) {
+                        blr.pop();
+                        blr.push(bl::clsbody);
+                        goto next;
+                    } else throw Exception(
+                        "UnexpectedToken",
+                        "Unexpected token after class base."
+                    );
+                case bl::clstemplate:
+                switch (blr.defstg++) {
+                    case 0:
+                        if (i.type == ppi_t::Token) {
+                            blr.push(i);
+                            goto next;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after class template"
+                        );
+                    case 1:
+                        if (i.type == ppi_t::Token) {
+                            ast_newToken(i.str);
+                            ast_newClass(blr.buf[0].str);
+                            ast_back();
+                            ast_back();
+                            blr.clear();
+                            goto next;
+                        } else if (i == ppi(ppi_t::Delimiter,",")) {
+                            ast_newToken(blr.buf[0].str);
+                            ast_back();
+                            blr.clear();
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::Operator,">")) {
+                            ast_newToken(blr.buf[0].str);
+                            ast_back();
+                            blr.clear();
+                            blr.defstg = 3;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after class template"
+                        );
+                    case 2:
+                        if (i == ppi(ppi_t::Delimiter,",")) {
+                            blr.defstg = 0;
+                            goto next;
+                        } else if (i == ppi(ppi_t::Operator,">")) {
+                            ast_back();
+                            goto next;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after class template"
+                        );
+                    case 3:
+                        if (i == ppi(ppi_t::Operator,":")) {
+                            blr.clear();
+                            blr.pop();
+                            blr.push(bl::clsbase);
+                            goto next;
+                        } else if (i == ppi(ppi_t::groupStart,"{")) {
+                            blr.clear();
+                            blr.pop();
+                            blr.push(bl::clsbody);
+                            goto next;
+                        } else if (i == ppi(ppi_t::Delimiter,";")){
+                            ast_back();
+                            blr.pop();
+                            blr.clear();
+                            goto next;
+                        } else throw Exception(
+                            "UnexpectedToken",
+                            "Unexpected token after class template"
+                        );
+                        
+                }
+                case bl::funcbody:
+                    if (i.type == ppi_t::Token) {
+                        
+                    }
+            }
+            next:
+            (void)0;
         }
         logger.debug("Parsing... done");
     }
@@ -1643,5 +2099,12 @@ public:
         includestack.pop_back();
 
     }
-    Compiler() : logger(Logger(*this)) {};
+    std::string exportdata() {
+        return code_stg6.repr();
+    }
+    Compiler() : logger(Logger(*this)) {
+        definitions["FOR_EACH"] = ForEveryDefinition();
+        definitions["GET_T_DEF"] = GetTDefDefinition();
+        definitions["HAS_ARGS_DEF"] = HasArgsDefinition();
+    };
 };

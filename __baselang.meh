@@ -1,6 +1,6 @@
 //#pragma once
 #define OPFUNC __attr__(opfunc)
-#define extern __attr__(extern)
+#define extern __attr__("extern")
 #define FUNCTYPE __functype
 
 #define public __attr__(publicaccessor)
